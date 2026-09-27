@@ -19,7 +19,9 @@ class DiscountRule:
 
     def apply(self, subtotal: Money) -> Money:
         if subtotal.currency != self.threshold.currency:
-            raise ValidationError('currency mismatch')
+            # Rules are denominated in one currency and never silently apply to
+            # another currency; a foreign-currency rule simply is not eligible.
+            return Money.zero(subtotal.currency)
         if subtotal.amount < self.threshold.amount:
             return Money.zero(subtotal.currency)
         amount = subtotal.scale(self.percent)
@@ -30,10 +32,19 @@ class DiscountRule:
 class DiscountBook:
 
     def __init__(self, rules: list[DiscountRule]):
+        codes = [r.code for r in rules]
+        if len(codes) != len(set(codes)):
+            raise ValidationError('duplicate discount code')
         self.rules = {r.code: r for r in rules}
 
     def best(self, subtotal: Money, eligible_codes: set[str]) -> tuple[str | None, Money]:
-        options = [(code, self.rules[code].apply(subtotal)) for code in eligible_codes if code in self.rules]
+        # Only rules denominated in the subtotal's currency participate, so the
+        # comparison never mixes currencies.
+        options = [
+            (code, self.rules[code].apply(subtotal))
+            for code in eligible_codes
+            if code in self.rules and self.rules[code].threshold.currency == subtotal.currency
+        ]
         if not options:
             return (None, Money.zero(subtotal.currency))
         return max(options, key=lambda x: (x[1].amount, x[0]))
