@@ -33,7 +33,12 @@ class DiscountBook:
         self.rules = {r.code: r for r in rules}
 
     def best(self, subtotal: Money, eligible_codes: set[str]) -> tuple[str | None, Money]:
-        options = [(code, self.rules[code].apply(subtotal)) for code in eligible_codes if code in self.rules]
+        options = []
+        for code in eligible_codes:
+            rule = self.rules.get(code)
+            if rule is None or rule.threshold.currency != subtotal.currency:
+                continue
+            options.append((code, rule.apply(subtotal)))
         if not options:
             return (None, Money.zero(subtotal.currency))
         return max(options, key=lambda x: (x[1].amount, x[0]))

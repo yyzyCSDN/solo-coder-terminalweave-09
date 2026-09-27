@@ -45,9 +45,9 @@ class DemurrageTariff:
     bands: tuple[TariffBand, ...]
 
     def __post_init__(self) -> None:
-        if self.free_chargeable_days < 0 or not self.bands:
+        ordered = tuple(sorted(self.bands, key=lambda b: b.from_day))
+        if self.free_chargeable_days < 0 or not ordered:
             raise ValidationError('invalid demurrage tariff')
-        ordered = sorted(self.bands, key=lambda b: b.from_day)
         if ordered[0].from_day != 1:
             raise ValidationError('tariff bands must start at day 1')
         previous_end = 0
@@ -57,6 +57,7 @@ class DemurrageTariff:
             previous_end = band.to_day if band.to_day is not None else previous_end
             if band.to_day is None and band is not ordered[-1]:
                 raise ValidationError('open-ended band must be last')
+        object.__setattr__(self, 'bands', ordered)
 
     def rate_for_charge_day(self, charge_day: int) -> Money:
         for band in self.bands:
@@ -82,7 +83,7 @@ class DemurrageCalculator:
         if gate_out_at < discharge_at:
             raise ValidationError('gate-out cannot precede discharge')
         days = self.calendar.chargeable_days(discharge_at.date(), gate_out_at.date())
-        billable = days[max(0, self.tariff.free_chargeable_days - 1):]
+        billable = days[self.tariff.free_chargeable_days:]
         lines = []
         for index, day in enumerate(billable, start=1):
             lines.append(DemurrageLine(day, index, self.tariff.rate_for_charge_day(index)))

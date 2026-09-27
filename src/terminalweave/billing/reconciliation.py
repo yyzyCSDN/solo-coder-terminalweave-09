@@ -19,18 +19,24 @@ class Receivable:
 class PaymentReconciler:
 
     def match(self, payments: list[PaymentRecord], receivables: list[Receivable], tolerance: Decimal=Decimal('0.01')) -> dict[str, str]:
+        if tolerance < 0:
+            raise ValidationError('tolerance cannot be negative')
         result = {}
         used = set()
+        seen_payments = set()
         for payment in payments:
+            if payment.payment_id in seen_payments:
+                continue
+            seen_payments.add(payment.payment_id)
             candidates = []
-            for rec in receivables:
+            for index, rec in enumerate(receivables):
                 if rec.invoice_id in used or rec.amount.currency != payment.amount.currency:
                     continue
                 delta = abs(rec.amount.amount - payment.amount.amount)
                 if delta <= tolerance:
-                    candidates.append((0 if rec.reference == payment.reference else 1, delta, rec.invoice_id, rec))
+                    candidates.append((0 if rec.reference == payment.reference else 1, delta, rec.invoice_id, index, rec))
             if candidates:
-                _, _, _, rec = min(candidates)
+                _, _, _, _, rec = min(candidates)
                 result[payment.payment_id] = rec.invoice_id
                 used.add(rec.invoice_id)
         return result
